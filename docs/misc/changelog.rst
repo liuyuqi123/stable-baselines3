@@ -3,7 +3,7 @@
 Changelog
 ==========
 
-Pre-Release 0.8.0a3 (WIP)
+Pre-Release 0.8.0a6 (WIP)
 ------------------------------
 
 Breaking Changes:
@@ -12,6 +12,8 @@ Breaking Changes:
 - ``save_replay_buffer`` now receives as argument the file path instead of the folder path (@tirafesi)
 - Refactored ``Critic`` class for ``TD3`` and ``SAC``, it is now called ``ContinuousCritic``
   and has an additional parameter ``n_critics``
+- ``SAC`` and ``TD3`` now accept an arbitrary number of critics (e.g. ``policy_kwargs=dict(n_critics=3)``)
+    instead of only 2 previously
 
 New Features:
 ^^^^^^^^^^^^^
@@ -21,12 +23,17 @@ New Features:
   when ``psutil`` is available
 - Saving models now automatically creates the necessary folders and raises appropriate warnings (@PartiallyTyped)
 - Refactored opening paths for saving and loading to use strings, pathlib or io.BufferedIOBase (@PartiallyTyped)
+- Added ``DDPG`` algorithm as a special case of ``TD3``.
 - Introduced ``BaseModel`` abstract parent for ``BasePolicy``, which critics inherit from.
 
 Bug Fixes:
 ^^^^^^^^^^
 - Fixed a bug in the ``close()`` method of ``SubprocVecEnv``, causing wrappers further down in the wrapper stack to not be closed. (@NeoExtended)
 - Fix target for updating q values in SAC: the entropy term was not conditioned by terminals states
+- Use ``cloudpickle.load`` instead of ``pickle.load`` in ``CloudpickleWrapper``. (@shwang)
+- Fixed a bug with orthogonal initialization when `bias=False` in custom policy (@rk37)
+- Fixed approximate entropy calculation in PPO and A2C. (@andyshih12)
+- Fixed DQN target network sharing feature extractor with the main network.
 
 Deprecations:
 ^^^^^^^^^^^^^
@@ -37,6 +44,11 @@ Others:
 - Split the ``collect_rollout()`` method for off-policy algorithms
 - Added ``_on_step()`` for off-policy base class
 - Optimized replay buffer size by removing the need of ``next_observations`` numpy array
+- Optimized polyak updates (1.5-1.95 speedup) through inplace operations (@PartiallyTyped)
+- Switch to ``black`` codestyle and added ``make format``, ``make check-codestyle`` and ``commit-checks``
+- Ignored errors from newer pytype version
+- Added a check when using ``gSDE``
+- Removed codacy dependency from Dockerfile
 
 Documentation:
 ^^^^^^^^^^^^^^
@@ -347,4 +359,4 @@ And all the contributors:
 @Miffyli @dwiel @miguelrass @qxcv @jaberkow @eavelardev @ruifeng96150 @pedrohbtp @srivatsankrishnan @evilsocket
 @MarvineGothic @jdossgollin @SyllogismRXS @rusu24edward @jbulow @Antymon @seheevic @justinkterry @edbeeching
 @flodorner @KuKuXia @NeoExtended @PartiallyTyped @mmcenta @richardwu @kinalmehta @rolandgvc @tkelestemur @mloo3
-@tirafesi @blurLake @koulakis @joeljosephjin
+@tirafesi @blurLake @koulakis @joeljosephjin @shwang @rk37 @andyshih12
