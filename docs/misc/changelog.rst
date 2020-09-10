@@ -3,19 +3,22 @@
 Changelog
 ==========
 
-Pre-Release 0.9.0a0 (WIP)
+Pre-Release 0.9.0a1 (WIP)
 ------------------------------
 
 Breaking Changes:
 ^^^^^^^^^^^^^^^^^
+- Removed ``device`` keyword argument of policies; use ``policy.to(device)`` instead. (@qxcv)
 
 New Features:
 ^^^^^^^^^^^^^
 - Added ``unwrap_vec_wrapper()`` to ``common.vec_env`` to extract ``VecEnvWrapper`` if needed
+- Added ``StopTrainingOnMaxEpisodes`` to callback collection (@xicocaio)
 
 Bug Fixes:
 ^^^^^^^^^^
 - Fixed a bug where the environment was reset twice when using ``evaluate_policy``
+- Fix logging of ``clip_fraction`` in PPO (@diditforlulz273)
 
 Deprecations:
 ^^^^^^^^^^^^^
@@ -24,9 +27,13 @@ Others:
 ^^^^^^^
 - Improve typing coverage of the ``VecEnv``
 - Removed ``AlreadySteppingError`` and ``NotSteppingError`` that were not used
+- Fixed typos in SAC and TD3
 
 Documentation:
 ^^^^^^^^^^^^^^
+- Added ``StopTrainingOnMaxEpisodes`` details and example (@xicocaio)
+
+
 
 Pre-Release 0.8.0 (2020-08-03)
 ------------------------------
@@ -52,6 +59,7 @@ New Features:
 - Refactored opening paths for saving and loading to use strings, pathlib or io.BufferedIOBase (@PartiallyTyped)
 - Added ``DDPG`` algorithm as a special case of ``TD3``.
 - Introduced ``BaseModel`` abstract parent for ``BasePolicy``, which critics inherit from.
+- Callbacks have access to rollout collection locals as in SB2. (@PartiallyTyped)
 
 Bug Fixes:
 ^^^^^^^^^^
@@ -390,4 +398,5 @@ And all the contributors:
 @Miffyli @dwiel @miguelrass @qxcv @jaberkow @eavelardev @ruifeng96150 @pedrohbtp @srivatsankrishnan @evilsocket
 @MarvineGothic @jdossgollin @SyllogismRXS @rusu24edward @jbulow @Antymon @seheevic @justinkterry @edbeeching
 @flodorner @KuKuXia @NeoExtended @PartiallyTyped @mmcenta @richardwu @kinalmehta @rolandgvc @tkelestemur @mloo3
-@tirafesi @blurLake @koulakis @joeljosephjin @shwang @rk37 @andyshih12 @RaphaelWag
+@tirafesi @blurLake @koulakis @joeljosephjin @shwang @rk37 @andyshih12 @RaphaelWag @xicocaio
+@diditforlulz273

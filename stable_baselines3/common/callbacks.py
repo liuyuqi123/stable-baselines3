@@ -33,8 +33,8 @@ class BaseCallback(ABC):
         # n_envs * n times env.step() was called
         self.num_timesteps = 0  # type: int
         self.verbose = verbose
-        self.locals = None  # type: Optional[Dict[str, Any]]
-        self.globals = None  # type: Optional[Dict[str, Any]]
+        self.locals: Dict[str, Any] = {}
+        self.globals: Dict[str, Any] = {}
         self.logger = None
         # Sometimes, for event callback, it is useful
         # to have access to the parent object
@@ -87,7 +87,7 @@ class BaseCallback(ABC):
         """
         self.n_calls += 1
         # timesteps start at zero
-        self.num_timesteps = self.model.num_timesteps + 1
+        self.num_timesteps = self.model.num_timesteps
 
         return self._on_step()
 
@@ -101,6 +101,23 @@ class BaseCallback(ABC):
         self._on_rollout_end()
 
     def _on_rollout_end(self) -> None:
+        pass
+
+    def update_locals(self, locals_: Dict[str, Any]) -> None:
+        """
+        Update the references to the local variables.
+
+        :param locals_: (Dict[str, Any]) the local variables during rollout collection
+        """
+        self.locals.update(locals_)
+        self.update_child_locals(locals_)
+
+    def update_child_locals(self, locals_: Dict[str, Any]) -> None:
+        """
+        Update the references to the local variables on sub callbacks.
+
+        :param locals_: (Dict[str, Any]) the local variables during rollout collection
+        """
         pass
 
 
@@ -136,6 +153,15 @@ class EventCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         return True
+
+    def update_child_locals(self, locals_: Dict[str, Any]) -> None:
+        """
+        Update the references to the local variables.
+
+        :param locals_: (Dict[str, Any]) the local variables during rollout collection
+        """
+        if self.callback is not None:
+            self.callback.update_locals(locals_)
 
 
 class CallbackList(BaseCallback):
@@ -177,6 +203,15 @@ class CallbackList(BaseCallback):
     def _on_training_end(self) -> None:
         for callback in self.callbacks:
             callback.on_training_end()
+
+    def update_child_locals(self, locals_: Dict[str, Any]) -> None:
+        """
+        Update the references to the local variables.
+
+        :param locals_: (Dict[str, Any]) the local variables during rollout collection
+        """
+        for callback in self.callbacks:
+            callback.update_locals(locals_)
 
 
 class CheckpointCallback(BaseCallback):
@@ -343,6 +378,15 @@ class EvalCallback(EventCallback):
 
         return True
 
+    def update_child_locals(self, locals_: Dict[str, Any]) -> None:
+        """
+        Update the references to the local variables.
+
+        :param locals_: (Dict[str, Any]) the local variables during rollout collection
+        """
+        if self.callback:
+            self.callback.update_locals(locals_)
+
 
 class StopTrainingOnRewardThreshold(BaseCallback):
     """
@@ -391,3 +435,48 @@ class EveryNTimesteps(EventCallback):
             self.last_time_trigger = self.num_timesteps
             return self._on_event()
         return True
+
+
+class StopTrainingOnMaxEpisodes(BaseCallback):
+    """
+    Stop the training once a maximum number of episodes are played.
+
+    For multiple environments presumes that, the desired behavior is that the agent trains on each env for ``max_episodes``
+    and in total for ``max_episodes * n_envs`` episodes.
+
+    :param max_episodes: (int) Maximum number of episodes to stop training.
+    :param verbose: (int) Select whether to print information about when training ended by reaching ``max_episodes``
+    """
+
+    def __init__(self, max_episodes: int, verbose: int = 0):
+        super(StopTrainingOnMaxEpisodes, self).__init__(verbose=verbose)
+        self.max_episodes = max_episodes
+        self._total_max_episodes = max_episodes
+        self.n_episodes = 0
+
+    def _init_callback(self):
+        # At start set total max according to number of envirnments
+        self._total_max_episodes = self.max_episodes * self.training_env.num_envs
+
+    def _on_step(self) -> bool:
+        # Checking for both 'done' and 'dones' keywords because:
+        # Some models use keyword 'done' (e.g.,: SAC, TD3, DQN, DDPG)
+        # While some models use keyword 'dones' (e.g.,: A2C, PPO)
+        done_array = np.array(self.locals.get("done") if self.locals.get("done") is not None else self.locals.get("dones"))
+        self.n_episodes += np.sum(done_array).item()
+
+        continue_training = self.n_episodes < self._total_max_episodes
+
+        if self.verbose > 0 and not continue_training:
+            mean_episodes_per_env = self.n_episodes / self.training_env.num_envs
+            mean_ep_str = (
+                f"with an average of {mean_episodes_per_env:.2f} episodes per env" if self.training_env.num_envs > 1 else ""
+            )
+
+            print(
+                f"Stopping training with a total of {self.num_timesteps} steps because the "
+                f"{self.locals.get('tb_log_name')} model reached max_episodes={self.max_episodes}, "
+                f"by playing for {self.n_episodes} episodes "
+                f"{mean_ep_str}"
+            )
+        return continue_training
