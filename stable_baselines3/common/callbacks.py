@@ -1,31 +1,27 @@
 import os
-import typing
 import warnings
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import gym
 import numpy as np
 
-from stable_baselines3.common import logger
+from stable_baselines3.common import base_class, logger  # pytype: disable=pyi-error
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.vec_env import DummyVecEnv, VecEnv, sync_envs_normalization
-
-if typing.TYPE_CHECKING:
-    from stable_baselines3.common.base_class import BaseAlgorithm  # pytype: disable=pyi-error
 
 
 class BaseCallback(ABC):
     """
     Base class for callback.
 
-    :param verbose: (int)
+    :param verbose:
     """
 
     def __init__(self, verbose: int = 0):
         super(BaseCallback, self).__init__()
         # The RL model
-        self.model = None  # type: Optional[BaseAlgorithm]
+        self.model = None  # type: Optional[base_class.BaseAlgorithm]
         # An alias for self.model.get_env(), the environment used for training
         self.training_env = None  # type: Union[gym.Env, VecEnv, None]
         # Number of time the callback was called
@@ -41,7 +37,7 @@ class BaseCallback(ABC):
         self.parent = None  # type: Optional[BaseCallback]
 
     # Type hint as string to avoid circular import
-    def init_callback(self, model: "BaseAlgorithm") -> None:
+    def init_callback(self, model: "base_class.BaseAlgorithm") -> None:
         """
         Initialize the callback by saving references to the
         RL model and the training environment for convenience.
@@ -72,7 +68,7 @@ class BaseCallback(ABC):
     @abstractmethod
     def _on_step(self) -> bool:
         """
-        :return: (bool) If the callback returns False, training is aborted early.
+        :return: If the callback returns False, training is aborted early.
         """
         return True
 
@@ -83,7 +79,7 @@ class BaseCallback(ABC):
         For child callback (of an ``EventCallback``), this will be called
         when the event is triggered.
 
-        :return: (bool) If the callback returns False, training is aborted early.
+        :return: If the callback returns False, training is aborted early.
         """
         self.n_calls += 1
         # timesteps start at zero
@@ -107,7 +103,7 @@ class BaseCallback(ABC):
         """
         Update the references to the local variables.
 
-        :param locals_: (Dict[str, Any]) the local variables during rollout collection
+        :param locals_: the local variables during rollout collection
         """
         self.locals.update(locals_)
         self.update_child_locals(locals_)
@@ -116,7 +112,7 @@ class BaseCallback(ABC):
         """
         Update the references to the local variables on sub callbacks.
 
-        :param locals_: (Dict[str, Any]) the local variables during rollout collection
+        :param locals_: the local variables during rollout collection
         """
         pass
 
@@ -125,9 +121,9 @@ class EventCallback(BaseCallback):
     """
     Base class for triggering callback on event.
 
-    :param callback: (Optional[BaseCallback]) Callback that will be called
+    :param callback: Callback that will be called
         when an event is triggered.
-    :param verbose: (int)
+    :param verbose:
     """
 
     def __init__(self, callback: Optional[BaseCallback] = None, verbose: int = 0):
@@ -137,7 +133,7 @@ class EventCallback(BaseCallback):
         if callback is not None:
             self.callback.parent = self
 
-    def init_callback(self, model: "BaseAlgorithm") -> None:
+    def init_callback(self, model: "base_class.BaseAlgorithm") -> None:
         super(EventCallback, self).init_callback(model)
         if self.callback is not None:
             self.callback.init_callback(self.model)
@@ -158,7 +154,7 @@ class EventCallback(BaseCallback):
         """
         Update the references to the local variables.
 
-        :param locals_: (Dict[str, Any]) the local variables during rollout collection
+        :param locals_: the local variables during rollout collection
         """
         if self.callback is not None:
             self.callback.update_locals(locals_)
@@ -168,7 +164,7 @@ class CallbackList(BaseCallback):
     """
     Class for chaining callbacks.
 
-    :param callbacks: (List[BaseCallback]) A list of callbacks that will be called
+    :param callbacks: A list of callbacks that will be called
         sequentially.
     """
 
@@ -208,7 +204,7 @@ class CallbackList(BaseCallback):
         """
         Update the references to the local variables.
 
-        :param locals_: (Dict[str, Any]) the local variables during rollout collection
+        :param locals_: the local variables during rollout collection
         """
         for callback in self.callbacks:
             callback.update_locals(locals_)
@@ -218,12 +214,13 @@ class CheckpointCallback(BaseCallback):
     """
     Callback for saving a model every ``save_freq`` steps
 
-    :param save_freq: (int)
-    :param save_path: (str) Path to the folder where the model will be saved.
-    :param name_prefix: (str) Common prefix to the saved models
+    :param save_freq:
+    :param save_path: Path to the folder where the model will be saved.
+    :param name_prefix: Common prefix to the saved models
+    :param verbose:
     """
 
-    def __init__(self, save_freq: int, save_path: str, name_prefix="rl_model", verbose=0):
+    def __init__(self, save_freq: int, save_path: str, name_prefix: str = "rl_model", verbose: int = 0):
         super(CheckpointCallback, self).__init__(verbose)
         self.save_freq = save_freq
         self.save_path = save_path
@@ -247,11 +244,11 @@ class ConvertCallback(BaseCallback):
     """
     Convert functional callback (old-style) to object.
 
-    :param callback: (callable)
-    :param verbose: (int)
+    :param callback:
+    :param verbose:
     """
 
-    def __init__(self, callback, verbose=0):
+    def __init__(self, callback: Callable[[Dict[str, Any], Dict[str, Any]], bool], verbose: int = 0):
         super(ConvertCallback, self).__init__(verbose)
         self.callback = callback
 
@@ -265,20 +262,21 @@ class EvalCallback(EventCallback):
     """
     Callback for evaluating an agent.
 
-    :param eval_env: (Union[gym.Env, VecEnv]) The environment used for initialization
-    :param callback_on_new_best: (Optional[BaseCallback]) Callback to trigger
+    :param eval_env: The environment used for initialization
+    :param callback_on_new_best: Callback to trigger
         when there is a new best model according to the ``mean_reward``
-    :param n_eval_episodes: (int) The number of episodes to test the agent
-    :param eval_freq: (int) Evaluate the agent every eval_freq call of the callback.
-    :param log_path: (str) Path to a folder where the evaluations (``evaluations.npz``)
+    :param n_eval_episodes: The number of episodes to test the agent
+    :param eval_freq: Evaluate the agent every eval_freq call of the callback.
+    :param log_path: Path to a folder where the evaluations (``evaluations.npz``)
         will be saved. It will be updated at each evaluation.
-    :param best_model_save_path: (str) Path to a folder where the best model
+    :param best_model_save_path: Path to a folder where the best model
         according to performance on the eval env will be saved.
-    :param deterministic: (bool) Whether the evaluation should
+    :param deterministic: Whether the evaluation should
         use a stochastic or deterministic actions.
-    :param deterministic: (bool) Whether to render or not the environment during evaluation
-    :param render: (bool) Whether to render or not the environment during evaluation
-    :param verbose: (int)
+    :param render: Whether to render or not the environment during evaluation
+    :param verbose:
+    :param warn: Passed to ``evaluate_policy`` (warns if ``eval_env`` has not been
+        wrapped with a Monitor wrapper)
     """
 
     def __init__(
@@ -292,6 +290,7 @@ class EvalCallback(EventCallback):
         deterministic: bool = True,
         render: bool = False,
         verbose: int = 1,
+        warn: bool = True,
     ):
         super(EvalCallback, self).__init__(callback_on_new_best, verbose=verbose)
         self.n_eval_episodes = n_eval_episodes
@@ -300,6 +299,7 @@ class EvalCallback(EventCallback):
         self.last_mean_reward = -np.inf
         self.deterministic = deterministic
         self.render = render
+        self.warn = warn
 
         # Convert to VecEnv for consistency
         if not isinstance(eval_env, VecEnv):
@@ -317,8 +317,11 @@ class EvalCallback(EventCallback):
         self.evaluations_results = []
         self.evaluations_timesteps = []
         self.evaluations_length = []
+        # For computing success rate
+        self._is_success_buffer = []
+        self.evaluations_successes = []
 
-    def _init_callback(self):
+    def _init_callback(self) -> None:
         # Does not work in some corner cases, where the wrapper is not the same
         if not isinstance(self.training_env, type(self.eval_env)):
             warnings.warn("Training and eval env are not of the same type" f"{self.training_env} != {self.eval_env}")
@@ -329,11 +332,33 @@ class EvalCallback(EventCallback):
         if self.log_path is not None:
             os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
 
+    def _log_success_callback(self, locals_: Dict[str, Any], globals_: Dict[str, Any]) -> None:
+        """
+        Callback passed to the  ``evaluate_policy`` function
+        in order to log the success rate (when applicable),
+        for instance when using HER.
+
+        :param locals_:
+        :param globals_:
+        """
+        info = locals_["info"]
+        # VecEnv: unpack
+        if not isinstance(info, dict):
+            info = info[0]
+
+        if locals_["done"]:
+            maybe_is_success = info.get("is_success")
+            if maybe_is_success is not None:
+                self._is_success_buffer.append(maybe_is_success)
+
     def _on_step(self) -> bool:
 
         if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
             # Sync training and eval env if there is VecNormalize
             sync_envs_normalization(self.training_env, self.eval_env)
+
+            # Reset success rate buffer
+            self._is_success_buffer = []
 
             episode_rewards, episode_lengths = evaluate_policy(
                 self.model,
@@ -342,17 +367,27 @@ class EvalCallback(EventCallback):
                 render=self.render,
                 deterministic=self.deterministic,
                 return_episode_rewards=True,
+                warn=self.warn,
+                callback=self._log_success_callback,
             )
 
             if self.log_path is not None:
                 self.evaluations_timesteps.append(self.num_timesteps)
                 self.evaluations_results.append(episode_rewards)
                 self.evaluations_length.append(episode_lengths)
+
+                kwargs = {}
+                # Save success log if present
+                if len(self._is_success_buffer) > 0:
+                    self.evaluations_successes.append(self._is_success_buffer)
+                    kwargs = dict(successes=self.evaluations_successes)
+
                 np.savez(
                     self.log_path,
                     timesteps=self.evaluations_timesteps,
                     results=self.evaluations_results,
                     ep_lengths=self.evaluations_length,
+                    **kwargs,
                 )
 
             mean_reward, std_reward = np.mean(episode_rewards), np.std(episode_rewards)
@@ -365,6 +400,12 @@ class EvalCallback(EventCallback):
             # Add to current Logger
             self.logger.record("eval/mean_reward", float(mean_reward))
             self.logger.record("eval/mean_ep_length", mean_ep_length)
+
+            if len(self._is_success_buffer) > 0:
+                success_rate = np.mean(self._is_success_buffer)
+                if self.verbose > 0:
+                    print(f"Success rate: {100 * success_rate:.2f}%")
+                self.logger.record("eval/success_rate", success_rate)
 
             if mean_reward > self.best_mean_reward:
                 if self.verbose > 0:
@@ -382,7 +423,7 @@ class EvalCallback(EventCallback):
         """
         Update the references to the local variables.
 
-        :param locals_: (Dict[str, Any]) the local variables during rollout collection
+        :param locals_: the local variables during rollout collection
         """
         if self.callback:
             self.callback.update_locals(locals_)
@@ -395,9 +436,9 @@ class StopTrainingOnRewardThreshold(BaseCallback):
 
     It must be used with the ``EvalCallback``.
 
-    :param reward_threshold: (float)  Minimum expected reward per episode
+    :param reward_threshold:  Minimum expected reward per episode
         to stop training.
-    :param verbose: (int)
+    :param verbose:
     """
 
     def __init__(self, reward_threshold: float, verbose: int = 0):
@@ -420,8 +461,8 @@ class EveryNTimesteps(EventCallback):
     """
     Trigger a callback every ``n_steps`` timesteps
 
-    :param n_steps: (int) Number of timesteps between two trigger.
-    :param callback: (BaseCallback) Callback that will be called
+    :param n_steps: Number of timesteps between two trigger.
+    :param callback: Callback that will be called
         when the event is triggered.
     """
 
@@ -444,8 +485,8 @@ class StopTrainingOnMaxEpisodes(BaseCallback):
     For multiple environments presumes that, the desired behavior is that the agent trains on each env for ``max_episodes``
     and in total for ``max_episodes * n_envs`` episodes.
 
-    :param max_episodes: (int) Maximum number of episodes to stop training.
-    :param verbose: (int) Select whether to print information about when training ended by reaching ``max_episodes``
+    :param max_episodes: Maximum number of episodes to stop training.
+    :param verbose: Select whether to print information about when training ended by reaching ``max_episodes``
     """
 
     def __init__(self, max_episodes: int, verbose: int = 0):
@@ -454,7 +495,7 @@ class StopTrainingOnMaxEpisodes(BaseCallback):
         self._total_max_episodes = max_episodes
         self.n_episodes = 0
 
-    def _init_callback(self):
+    def _init_callback(self) -> None:
         # At start set total max according to number of envirnments
         self._total_max_episodes = self.max_episodes * self.training_env.num_envs
 

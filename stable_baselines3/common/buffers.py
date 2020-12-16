@@ -1,5 +1,6 @@
 import warnings
-from typing import Generator, Optional, Union
+from abc import ABC, abstractmethod
+from typing import Dict, Generator, Optional, Union
 
 import numpy as np
 import torch as th
@@ -16,16 +17,16 @@ from stable_baselines3.common.type_aliases import ReplayBufferSamples, RolloutBu
 from stable_baselines3.common.vec_env import VecNormalize
 
 
-class BaseBuffer(object):
+class BaseBuffer(ABC):
     """
     Base class that represent a buffer (rollout or replay)
 
-    :param buffer_size: (int) Max number of element in the buffer
-    :param observation_space: (spaces.Space) Observation space
-    :param action_space: (spaces.Space) Action space
-    :param device: (Union[th.device, str]) PyTorch device
+    :param buffer_size: Max number of element in the buffer
+    :param observation_space: Observation space
+    :param action_space: Action space
+    :param device: PyTorch device
         to which the values will be converted
-    :param n_envs: (int) Number of parallel environments
+    :param n_envs: Number of parallel environments
     """
 
     def __init__(
@@ -54,8 +55,8 @@ class BaseBuffer(object):
         to convert shape from [n_steps, n_envs, ...] (when ... is the shape of the features)
         to [n_steps * n_envs, ...] (which maintain the order)
 
-        :param arr: (np.ndarray)
-        :return: (np.ndarray)
+        :param arr:
+        :return:
         """
         shape = arr.shape
         if len(shape) < 3:
@@ -64,7 +65,7 @@ class BaseBuffer(object):
 
     def size(self) -> int:
         """
-        :return: (int) The current size of the buffer
+        :return: The current size of the buffer
         """
         if self.full:
             return self.buffer_size
@@ -93,20 +94,23 @@ class BaseBuffer(object):
 
     def sample(self, batch_size: int, env: Optional[VecNormalize] = None):
         """
-        :param batch_size: (int) Number of element to sample
-        :param env: (Optional[VecNormalize]) associated gym VecEnv
+        :param batch_size: Number of element to sample
+        :param env: associated gym VecEnv
             to normalize the observations/rewards when sampling
-        :return: (Union[RolloutBufferSamples, ReplayBufferSamples])
+        :return:
         """
         upper_bound = self.buffer_size if self.full else self.pos
         batch_inds = np.random.randint(0, upper_bound, size=batch_size)
         return self._get_samples(batch_inds, env=env)
 
-    def _get_samples(self, batch_inds: np.ndarray, env: Optional[VecNormalize] = None):
+    @abstractmethod
+    def _get_samples(
+        self, batch_inds: np.ndarray, env: Optional[VecNormalize] = None
+    ) -> Union[ReplayBufferSamples, RolloutBufferSamples]:
         """
-        :param batch_inds: (th.Tensor)
-        :param env: (Optional[VecNormalize])
-        :return: (Union[RolloutBufferSamples, ReplayBufferSamples])
+        :param batch_inds:
+        :param env:
+        :return:
         """
         raise NotImplementedError()
 
@@ -115,19 +119,21 @@ class BaseBuffer(object):
         Convert a numpy array to a PyTorch tensor.
         Note: it copies the data by default
 
-        :param array: (np.ndarray)
-        :param copy: (bool) Whether to copy or not the data
+        :param array:
+        :param copy: Whether to copy or not the data
             (may be useful to avoid changing things be reference)
-        :return: (th.Tensor)
+        :return:
         """
         if copy:
             return th.tensor(array).to(self.device)
         return th.as_tensor(array).to(self.device)
 
     @staticmethod
-    def _normalize_obs(obs: np.ndarray, env: Optional[VecNormalize] = None) -> np.ndarray:
+    def _normalize_obs(
+        obs: Union[np.ndarray, Dict[str, np.ndarray]], env: Optional[VecNormalize] = None
+    ) -> Union[np.ndarray, Dict[str, np.ndarray]]:
         if env is not None:
-            return env.normalize_obs(obs).astype(np.float32)
+            return env.normalize_obs(obs)
         return obs
 
     @staticmethod
@@ -141,12 +147,12 @@ class ReplayBuffer(BaseBuffer):
     """
     Replay buffer used in off-policy algorithms like SAC/TD3.
 
-    :param buffer_size: (int) Max number of element in the buffer
-    :param observation_space: (spaces.Space) Observation space
-    :param action_space: (spaces.Space) Action space
-    :param device: (th.device)
-    :param n_envs: (int) Number of parallel environments
-    :param optimize_memory_usage: (bool) Enable a memory efficient variant
+    :param buffer_size: Max number of element in the buffer
+    :param observation_space: Observation space
+    :param action_space: Action space
+    :param device:
+    :param n_envs: Number of parallel environments
+    :param optimize_memory_usage: Enable a memory efficient variant
         of the replay buffer which reduces by almost a factor two the memory used,
         at a cost of more complexity.
         See https://github.com/DLR-RM/stable-baselines3/issues/37#issuecomment-637501195
@@ -219,10 +225,10 @@ class ReplayBuffer(BaseBuffer):
         as we should not sample the element with index `self.pos`
         See https://github.com/DLR-RM/stable-baselines3/pull/28#issuecomment-637559274
 
-        :param batch_size: (int) Number of element to sample
-        :param env: (Optional[VecNormalize]) associated gym VecEnv
+        :param batch_size: Number of element to sample
+        :param env: associated gym VecEnv
             to normalize the observations/rewards when sampling
-        :return: (Union[RolloutBufferSamples, ReplayBufferSamples])
+        :return:
         """
         if not self.optimize_memory_usage:
             return super().sample(batch_size=batch_size, env=env)
@@ -253,15 +259,24 @@ class ReplayBuffer(BaseBuffer):
 class RolloutBuffer(BaseBuffer):
     """
     Rollout buffer used in on-policy algorithms like A2C/PPO.
+    It corresponds to ``buffer_size`` transitions collected
+    using the current policy.
+    This experience will be discarded after the policy update.
+    In order to use PPO objective, we also store the current value of each state
+    and the log probability of each taken action.
 
-    :param buffer_size: (int) Max number of element in the buffer
-    :param observation_space: (spaces.Space) Observation space
-    :param action_space: (spaces.Space) Action space
-    :param device: (th.device)
-    :param gae_lambda: (float) Factor for trade-off of bias vs variance for Generalized Advantage Estimator
+    The term rollout here refers to the model-free notion and should not
+    be used with the concept of rollout used in model-based RL or planning.
+    Hence, it is only involved in policy and value function training but not action selection.
+
+    :param buffer_size: Max number of element in the buffer
+    :param observation_space: Observation space
+    :param action_space: Action space
+    :param device:
+    :param gae_lambda: Factor for trade-off of bias vs variance for Generalized Advantage Estimator
         Equivalent to classic advantage when set to 1.
-    :param gamma: (float) Discount factor
-    :param n_envs: (int) Number of parallel environments
+    :param gamma: Discount factor
+    :param n_envs: Number of parallel environments
     """
 
     def __init__(
@@ -295,7 +310,7 @@ class RolloutBuffer(BaseBuffer):
         self.generator_ready = False
         super(RolloutBuffer, self).reset()
 
-    def compute_returns_and_advantage(self, last_value: th.Tensor, dones: np.ndarray) -> None:
+    def compute_returns_and_advantage(self, last_values: th.Tensor, dones: np.ndarray) -> None:
         """
         Post-processing step: compute the returns (sum of discounted rewards)
         and GAE advantage.
@@ -306,22 +321,22 @@ class RolloutBuffer(BaseBuffer):
         where R is the discounted reward with value bootstrap,
         set ``gae_lambda=1.0`` during initialization.
 
-        :param last_value: (th.Tensor)
-        :param dones: (np.ndarray)
+        :param last_values:
+        :param dones:
 
         """
         # convert to numpy
-        last_value = last_value.clone().cpu().numpy().flatten()
+        last_values = last_values.clone().cpu().numpy().flatten()
 
         last_gae_lam = 0
         for step in reversed(range(self.buffer_size)):
             if step == self.buffer_size - 1:
                 next_non_terminal = 1.0 - dones
-                next_value = last_value
+                next_values = last_values
             else:
                 next_non_terminal = 1.0 - self.dones[step + 1]
-                next_value = self.values[step + 1]
-            delta = self.rewards[step] + self.gamma * next_value * next_non_terminal - self.values[step]
+                next_values = self.values[step + 1]
+            delta = self.rewards[step] + self.gamma * next_values * next_non_terminal - self.values[step]
             last_gae_lam = delta + self.gamma * self.gae_lambda * next_non_terminal * last_gae_lam
             self.advantages[step] = last_gae_lam
         self.returns = self.advantages + self.values
@@ -330,13 +345,13 @@ class RolloutBuffer(BaseBuffer):
         self, obs: np.ndarray, action: np.ndarray, reward: np.ndarray, done: np.ndarray, value: th.Tensor, log_prob: th.Tensor
     ) -> None:
         """
-        :param obs: (np.ndarray) Observation
-        :param action: (np.ndarray) Action
-        :param reward: (np.ndarray)
-        :param done: (np.ndarray) End of episode signal.
-        :param value: (th.Tensor) estimated value of the current state
+        :param obs: Observation
+        :param action: Action
+        :param reward:
+        :param done: End of episode signal.
+        :param value: estimated value of the current state
             following the current policy.
-        :param log_prob: (th.Tensor) log probability of the action
+        :param log_prob: log probability of the action
             following the current policy.
         """
         if len(log_prob.shape) == 0:

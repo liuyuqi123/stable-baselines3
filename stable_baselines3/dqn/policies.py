@@ -1,22 +1,23 @@
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type
 
 import gym
 import torch as th
-from torch import nn as nn
+from torch import nn
 
 from stable_baselines3.common.policies import BasePolicy, register_policy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor, FlattenExtractor, NatureCNN, create_mlp
+from stable_baselines3.common.type_aliases import Schedule
 
 
 class QNetwork(BasePolicy):
     """
     Action-Value (Q-Value) network for DQN
 
-    :param observation_space: (gym.spaces.Space) Observation space
-    :param action_space: (gym.spaces.Space) Action space
-    :param net_arch: (Optional[List[int]]) The specification of the policy and value networks.
-    :param activation_fn: (Type[nn.Module]) Activation function
-    :param normalize_images: (bool) Whether to normalize images or not,
+    :param observation_space: Observation space
+    :param action_space: Action space
+    :param net_arch: The specification of the policy and value networks.
+    :param activation_fn: Activation function
+    :param normalize_images: Whether to normalize images or not,
          dividing by 255.0 (True by default)
     """
 
@@ -53,8 +54,8 @@ class QNetwork(BasePolicy):
         """
         Predict the q-values.
 
-        :param obs: (th.Tensor) Observation
-        :return: (th.Tensor) The estimated Q-Value for each action.
+        :param obs: Observation
+        :return: The estimated Q-Value for each action.
         """
         return self.q_net(self.extract_features(obs))
 
@@ -83,19 +84,19 @@ class DQNPolicy(BasePolicy):
     """
     Policy class with Q-Value Net and target net for DQN
 
-    :param observation_space: (gym.spaces.Space) Observation space
-    :param action_space: (gym.spaces.Space) Action space
-    :param lr_schedule: (callable) Learning rate schedule (could be constant)
-    :param net_arch: (Optional[List[int]]) The specification of the policy and value networks.
-    :param activation_fn: (Type[nn.Module]) Activation function
-    :param features_extractor_class: (Type[BaseFeaturesExtractor]) Features extractor to use.
-    :param features_extractor_kwargs: (Optional[Dict[str, Any]]) Keyword arguments
-        to pass to the feature extractor.
-    :param normalize_images: (bool) Whether to normalize images or not,
+    :param observation_space: Observation space
+    :param action_space: Action space
+    :param lr_schedule: Learning rate schedule (could be constant)
+    :param net_arch: The specification of the policy and value networks.
+    :param activation_fn: Activation function
+    :param features_extractor_class: Features extractor to use.
+    :param features_extractor_kwargs: Keyword arguments
+        to pass to the features extractor.
+    :param normalize_images: Whether to normalize images or not,
          dividing by 255.0 (True by default)
-    :param optimizer_class: (Type[th.optim.Optimizer]) The optimizer to use,
+    :param optimizer_class: The optimizer to use,
         ``th.optim.Adam`` by default
-    :param optimizer_kwargs: (Optional[Dict[str, Any]]) Additional keyword arguments,
+    :param optimizer_kwargs: Additional keyword arguments,
         excluding the learning rate, to pass to the optimizer
     """
 
@@ -103,7 +104,7 @@ class DQNPolicy(BasePolicy):
         self,
         observation_space: gym.spaces.Space,
         action_space: gym.spaces.Space,
-        lr_schedule: Callable,
+        lr_schedule: Schedule,
         net_arch: Optional[List[int]] = None,
         activation_fn: Type[nn.Module] = nn.ReLU,
         features_extractor_class: Type[BaseFeaturesExtractor] = FlattenExtractor,
@@ -142,11 +143,11 @@ class DQNPolicy(BasePolicy):
         self.q_net, self.q_net_target = None, None
         self._build(lr_schedule)
 
-    def _build(self, lr_schedule: Callable) -> None:
+    def _build(self, lr_schedule: Schedule) -> None:
         """
         Create the network and the optimizer.
 
-        :param lr_schedule: (Callable) Learning rate schedule
+        :param lr_schedule: Learning rate schedule
             lr_schedule(1) is the initial learning rate
         """
 
@@ -158,10 +159,9 @@ class DQNPolicy(BasePolicy):
         self.optimizer = self.optimizer_class(self.parameters(), lr=lr_schedule(1), **self.optimizer_kwargs)
 
     def make_q_net(self) -> QNetwork:
-        # Make sure we always have separate networks for feature extractors etc
-        features_extractor = self.features_extractor_class(self.observation_space, **self.features_extractor_kwargs)
-        features_dim = features_extractor.features_dim
-        return QNetwork(features_extractor=features_extractor, features_dim=features_dim, **self.net_args).to(self.device)
+        # Make sure we always have separate networks for features extractors etc
+        net_args = self._update_features_extractor(self.net_args, features_extractor=None)
+        return QNetwork(**net_args).to(self.device)
 
     def forward(self, obs: th.Tensor, deterministic: bool = True) -> th.Tensor:
         return self._predict(obs, deterministic=deterministic)
@@ -193,17 +193,17 @@ class CnnPolicy(DQNPolicy):
     """
     Policy class for DQN when using images as input.
 
-    :param observation_space: (gym.spaces.Space) Observation space
-    :param action_space: (gym.spaces.Space) Action space
-    :param lr_schedule: (callable) Learning rate schedule (could be constant)
-    :param net_arch: (Optional[List[int]]) The specification of the policy and value networks.
-    :param activation_fn: (Type[nn.Module]) Activation function
-    :param features_extractor_class: (Type[BaseFeaturesExtractor]) Features extractor to use.
-    :param normalize_images: (bool) Whether to normalize images or not,
+    :param observation_space: Observation space
+    :param action_space: Action space
+    :param lr_schedule: Learning rate schedule (could be constant)
+    :param net_arch: The specification of the policy and value networks.
+    :param activation_fn: Activation function
+    :param features_extractor_class: Features extractor to use.
+    :param normalize_images: Whether to normalize images or not,
          dividing by 255.0 (True by default)
-    :param optimizer_class: (Type[th.optim.Optimizer]) The optimizer to use,
+    :param optimizer_class: The optimizer to use,
         ``th.optim.Adam`` by default
-    :param optimizer_kwargs: (Optional[Dict[str, Any]]) Additional keyword arguments,
+    :param optimizer_kwargs: Additional keyword arguments,
         excluding the learning rate, to pass to the optimizer
     """
 
@@ -211,7 +211,7 @@ class CnnPolicy(DQNPolicy):
         self,
         observation_space: gym.spaces.Space,
         action_space: gym.spaces.Space,
-        lr_schedule: Callable,
+        lr_schedule: Schedule,
         net_arch: Optional[List[int]] = None,
         activation_fn: Type[nn.Module] = nn.ReLU,
         features_extractor_class: Type[BaseFeaturesExtractor] = NatureCNN,

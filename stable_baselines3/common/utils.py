@@ -2,7 +2,8 @@ import glob
 import os
 import random
 from collections import deque
-from typing import Callable, Iterable, Optional, Union
+from itertools import zip_longest
+from typing import Iterable, Optional, Union
 
 import gym
 import numpy as np
@@ -15,16 +16,14 @@ except ImportError:
     SummaryWriter = None
 
 from stable_baselines3.common import logger
-from stable_baselines3.common.preprocessing import is_image_space
-from stable_baselines3.common.type_aliases import GymEnv
-from stable_baselines3.common.vec_env import VecTransposeImage
+from stable_baselines3.common.type_aliases import GymEnv, Schedule
 
 
 def set_random_seed(seed: int, using_cuda: bool = False) -> None:
     """
     Seed the different random generators
-    :param seed: (int)
-    :param using_cuda: (bool)
+    :param seed:
+    :param using_cuda:
     """
     # Seed python RNG
     random.seed(seed)
@@ -50,9 +49,9 @@ def explained_variance(y_pred: np.ndarray, y_true: np.ndarray) -> np.ndarray:
         ev=1  =>  perfect prediction
         ev<0  =>  worse than just predicting zero
 
-    :param y_pred: (np.ndarray) the prediction
-    :param y_true: (np.ndarray) the expected value
-    :return: (float) explained variance of ypred and y
+    :param y_pred: the prediction
+    :param y_true: the expected value
+    :return: explained variance of ypred and y
     """
     assert y_true.ndim == 1 and y_pred.ndim == 1
     var_y = np.var(y_true)
@@ -64,20 +63,20 @@ def update_learning_rate(optimizer: th.optim.Optimizer, learning_rate: float) ->
     Update the learning rate for a given optimizer.
     Useful when doing linear schedule.
 
-    :param optimizer: (th.optim.Optimizer)
-    :param learning_rate: (float)
+    :param optimizer:
+    :param learning_rate:
     """
     for param_group in optimizer.param_groups:
         param_group["lr"] = learning_rate
 
 
-def get_schedule_fn(value_schedule: Union[Callable, float]) -> Callable:
+def get_schedule_fn(value_schedule: Union[Schedule, float, int]) -> Schedule:
     """
     Transform (if needed) learning rate and clip range (for PPO)
     to callable.
 
-    :param value_schedule: (callable or float)
-    :return: (function)
+    :param value_schedule:
+    :return:
     """
     # If the passed schedule is a float
     # create a constant function
@@ -89,19 +88,19 @@ def get_schedule_fn(value_schedule: Union[Callable, float]) -> Callable:
     return value_schedule
 
 
-def get_linear_fn(start: float, end: float, end_fraction: float) -> Callable:
+def get_linear_fn(start: float, end: float, end_fraction: float) -> Schedule:
     """
     Create a function that interpolates linearly between start and end
     between ``progress_remaining`` = 1 and ``progress_remaining`` = ``end_fraction``.
     This is used in DQN for linearly annealing the exploration fraction
     (epsilon for the epsilon-greedy strategy).
 
-    :params start: (float) value to start with if ``progress_remaining`` = 1
-    :params end: (float) value to end with if ``progress_remaining`` = 0
-    :params end_fraction: (float) fraction of ``progress_remaining``
+    :params start: value to start with if ``progress_remaining`` = 1
+    :params end: value to end with if ``progress_remaining`` = 0
+    :params end_fraction: fraction of ``progress_remaining``
         where end is reached e.g 0.1 then end is reached after 10%
         of the complete training process.
-    :return: (Callable)
+    :return:
     """
 
     def func(progress_remaining: float) -> float:
@@ -113,13 +112,13 @@ def get_linear_fn(start: float, end: float, end_fraction: float) -> Callable:
     return func
 
 
-def constant_fn(val: float) -> Callable:
+def constant_fn(val: float) -> Schedule:
     """
     Create a function that returns a constant
     It is useful for learning rate schedule (to avoid code duplication)
 
-    :param val: (float)
-    :return: (Callable)
+    :param val:
+    :return:
     """
 
     def func(_):
@@ -135,8 +134,8 @@ def get_device(device: Union[th.device, str] = "auto") -> th.device:
     For now, it supports only cpu and cuda.
     By default, it tries to use the gpu.
 
-    :param device: (Union[str, th.device]) One for 'auto', 'cuda', 'cpu'
-    :return: (th.device)
+    :param device: One for 'auto', 'cuda', 'cpu'
+    :return:
     """
     # Cuda by default
     if device == "auto":
@@ -145,7 +144,7 @@ def get_device(device: Union[th.device, str] = "auto") -> th.device:
     device = th.device(device)
 
     # Cuda not available
-    if device == th.device("cuda") and not th.cuda.is_available():
+    if device.type == th.device("cuda").type and not th.cuda.is_available():
         return th.device("cpu")
 
     return device
@@ -156,7 +155,7 @@ def get_latest_run_id(log_path: Optional[str] = None, log_name: str = "") -> int
     Returns the latest run number for the given log name and log path,
     by finding the greatest number in the directories.
 
-    :return: (int) latest run number
+    :return: latest run number
     """
     max_run_id = 0
     for path in glob.glob(f"{log_path}/{log_name}_[0-9]*"):
@@ -173,9 +172,9 @@ def configure_logger(
     """
     Configure the logger's outputs.
 
-    :param verbose: (int) the verbosity level: 0 no output, 1 info, 2 debug
-    :param tensorboard_log: (str) the log location for tensorboard (if None, no logging)
-    :param tb_log_name: (str) tensorboard log
+    :param verbose: the verbosity level: 0 no output, 1 info, 2 debug
+    :param tensorboard_log: the log location for tensorboard (if None, no logging)
+    :param tb_log_name: tensorboard log
     """
     if tensorboard_log is not None and SummaryWriter is not None:
         latest_run_id = get_latest_run_id(tensorboard_log, tb_log_name)
@@ -191,7 +190,7 @@ def configure_logger(
         logger.configure(format_strings=[""])
 
 
-def check_for_correct_spaces(env: GymEnv, observation_space: gym.spaces.Space, action_space: gym.spaces.Space):
+def check_for_correct_spaces(env: GymEnv, observation_space: gym.spaces.Space, action_space: gym.spaces.Space) -> None:
     """
     Checks that the environment has same spaces as provided ones. Used by BaseAlgorithm to check if
     spaces match after loading the model with given env.
@@ -199,18 +198,11 @@ def check_for_correct_spaces(env: GymEnv, observation_space: gym.spaces.Space, a
     - observation_space
     - action_space
 
-    :param env: (GymEnv) Environment to check for valid spaces
-    :param observation_space: (gym.spaces.Space) Observation space to check against
-    :param action_space: (gym.spaces.Space) Action space to check against
+    :param env: Environment to check for valid spaces
+    :param observation_space: Observation space to check against
+    :param action_space: Action space to check against
     """
-    if (
-        observation_space != env.observation_space
-        # Special cases for images that need to be transposed
-        and not (
-            is_image_space(env.observation_space)
-            and observation_space == VecTransposeImage.transpose_space(env.observation_space)
-        )
-    ):
+    if observation_space != env.observation_space:
         raise ValueError(f"Observation spaces do not match: {observation_space} != {env.observation_space}")
     if action_space != env.action_space:
         raise ValueError(f"Action spaces do not match: {action_space} != {env.action_space}")
@@ -221,9 +213,9 @@ def is_vectorized_observation(observation: np.ndarray, observation_space: gym.sp
     For every observation type, detects and validates the shape,
     then returns whether or not the observation is vectorized.
 
-    :param observation: (np.ndarray) the input observation to validate
-    :param observation_space: (gym.spaces) the observation space
-    :return: (bool) whether the given observation is vectorized or not
+    :param observation: the input observation to validate
+    :param observation_space: the observation space
+    :return: whether the given observation is vectorized or not
     """
     if isinstance(observation_space, gym.spaces.Box):
         if observation.shape == observation_space.shape:
@@ -286,6 +278,24 @@ def safe_mean(arr: Union[np.ndarray, list, deque]) -> np.ndarray:
     return np.nan if len(arr) == 0 else np.mean(arr)
 
 
+def zip_strict(*iterables: Iterable) -> Iterable:
+    r"""
+    ``zip()`` function but enforces that iterables are of equal length.
+    Raises ``ValueError`` if iterables not of equal length.
+    Code inspired by Stackoverflow answer for question #32954486.
+
+    :param \*iterables: iterables to ``zip()``
+    """
+    # As in Stackoverflow #32954486, use
+    # new object for "empty" in case we have
+    # Nones in iterable.
+    sentinel = object()
+    for combo in zip_longest(*iterables, fillvalue=sentinel):
+        if sentinel in combo:
+            raise ValueError("Iterables have different lengths")
+        yield combo
+
+
 def polyak_update(params: Iterable[th.nn.Parameter], target_params: Iterable[th.nn.Parameter], tau: float) -> None:
     """
     Perform a Polyak average update on ``target_params`` using ``params``:
@@ -298,11 +308,12 @@ def polyak_update(params: Iterable[th.nn.Parameter], target_params: Iterable[th.
     params (in place).
     See https://github.com/DLR-RM/stable-baselines3/issues/93
 
-    :param params: (Iterable[th.nn.Parameter]) parameters to use to update the target params
-    :param target_params: (Iterable[th.nn.Parameter]) parameters to update
-    :param tau: (float) the soft update coefficient ("Polyak update", between 0 and 1)
+    :param params: parameters to use to update the target params
+    :param target_params: parameters to update
+    :param tau: the soft update coefficient ("Polyak update", between 0 and 1)
     """
     with th.no_grad():
-        for param, target_param in zip(params, target_params):
+        # zip does not raise an exception if length of parameters does not match.
+        for param, target_param in zip_strict(params, target_params):
             target_param.data.mul_(1 - tau)
             th.add(target_param.data, param.data, alpha=tau, out=target_param.data)

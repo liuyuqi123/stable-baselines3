@@ -1,9 +1,27 @@
+import warnings
 from typing import Tuple
 
 import numpy as np
 import torch as th
 from gym import spaces
 from torch.nn import functional as F
+
+
+def is_image_space_channels_first(observation_space: spaces.Box) -> bool:
+    """
+    Check if an image observation space (see ``is_image_space``)
+    is channels-first (CxHxW, True) or channels-last (HxWxC, False).
+
+    Use a heuristic that channel dimension is the smallest of the three.
+    If second dimension is smallest, raise an exception (no support).
+
+    :param observation_space:
+    :return: True if observation space is channels-first image, False if channels-last.
+    """
+    smallest_dimension = np.argmin(observation_space.shape).item()
+    if smallest_dimension == 1:
+        warnings.warn("Treating image space as channels-last, while second dimension was smallest of the three.")
+    return smallest_dimension == 0
 
 
 def is_image_space(observation_space: spaces.Space, channels_last: bool = True, check_channels: bool = False) -> bool:
@@ -15,11 +33,11 @@ def is_image_space(observation_space: spaces.Space, channels_last: bool = True, 
 
     Valid images: RGB, RGBD, GrayScale with values in [0, 255]
 
-    :param observation_space: (spaces.Space)
-    :param channels_last: (bool)
-    :param check_channels: (bool) Whether to do or not the check for the number of channels.
+    :param observation_space:
+    :param channels_last:
+    :param check_channels: Whether to do or not the check for the number of channels.
         e.g., with frame-stacking, the observation space may have more channels than expected.
-    :return: (bool)
+    :return:
     """
     if isinstance(observation_space, spaces.Box) and len(observation_space.shape) == 3:
         # Check the type
@@ -49,11 +67,11 @@ def preprocess_obs(obs: th.Tensor, observation_space: spaces.Space, normalize_im
     For images, it normalizes the values by dividing them by 255 (to have values in [0, 1])
     For discrete observations, it create a one hot vector.
 
-    :param obs: (th.Tensor) Observation
-    :param observation_space: (spaces.Space)
-    :param normalize_images: (bool) Whether to normalize images or not
+    :param obs: Observation
+    :param observation_space:
+    :param normalize_images: Whether to normalize images or not
         (True by default)
-    :return: (th.Tensor)
+    :return:
     """
     if isinstance(observation_space, spaces.Box):
         if is_image_space(observation_space) and normalize_images:
@@ -78,15 +96,15 @@ def preprocess_obs(obs: th.Tensor, observation_space: spaces.Space, normalize_im
         return obs.float()
 
     else:
-        raise NotImplementedError()
+        raise NotImplementedError(f"Preprocessing not implemented for {observation_space}")
 
 
 def get_obs_shape(observation_space: spaces.Space) -> Tuple[int, ...]:
     """
     Get the shape of the observation (useful for the buffers).
 
-    :param observation_space: (spaces.Space)
-    :return: (Tuple[int, ...])
+    :param observation_space:
+    :return:
     """
     if isinstance(observation_space, spaces.Box):
         return observation_space.shape
@@ -100,7 +118,7 @@ def get_obs_shape(observation_space: spaces.Space) -> Tuple[int, ...]:
         # Number of binary features
         return (int(observation_space.n),)
     else:
-        raise NotImplementedError()
+        raise NotImplementedError(f"{observation_space} observation space is not supported")
 
 
 def get_flattened_obs_dim(observation_space: spaces.Space) -> int:
@@ -108,8 +126,8 @@ def get_flattened_obs_dim(observation_space: spaces.Space) -> int:
     Get the dimension of the observation space when flattened.
     It does not apply to image observation space.
 
-    :param observation_space: (spaces.Space)
-    :return: (int)
+    :param observation_space:
+    :return:
     """
     # See issue https://github.com/openai/gym/issues/1915
     # it may be a problem for Dict/Tuple spaces too...
@@ -124,8 +142,8 @@ def get_action_dim(action_space: spaces.Space) -> int:
     """
     Get the dimension of the action space.
 
-    :param action_space: (spaces.Space)
-    :return: (int)
+    :param action_space:
+    :return:
     """
     if isinstance(action_space, spaces.Box):
         return int(np.prod(action_space.shape))
@@ -139,4 +157,4 @@ def get_action_dim(action_space: spaces.Space) -> int:
         # Number of binary actions
         return int(action_space.n)
     else:
-        raise NotImplementedError()
+        raise NotImplementedError(f"{action_space} action space is not supported")

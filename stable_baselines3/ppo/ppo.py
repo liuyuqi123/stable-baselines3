@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict, Optional, Type, Union
+from typing import Any, Dict, Optional, Type, Union
 
 import numpy as np
 import torch as th
@@ -8,7 +8,7 @@ from torch.nn import functional as F
 from stable_baselines3.common import logger
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 from stable_baselines3.common.policies import ActorCriticPolicy
-from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback
+from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
 from stable_baselines3.common.utils import explained_variance, get_schedule_fn
 
 
@@ -23,57 +23,57 @@ class PPO(OnPolicyAlgorithm):
 
     Introduction to PPO: https://spinningup.openai.com/en/latest/algorithms/ppo.html
 
-    :param policy: (ActorCriticPolicy or str) The policy model to use (MlpPolicy, CnnPolicy, ...)
-    :param env: (Gym environment or str) The environment to learn from (if registered in Gym, can be str)
-    :param learning_rate: (float or callable) The learning rate, it can be a function
+    :param policy: The policy model to use (MlpPolicy, CnnPolicy, ...)
+    :param env: The environment to learn from (if registered in Gym, can be str)
+    :param learning_rate: The learning rate, it can be a function
         of the current progress remaining (from 1 to 0)
-    :param n_steps: (int) The number of steps to run for each environment per update
+    :param n_steps: The number of steps to run for each environment per update
         (i.e. batch size is n_steps * n_env where n_env is number of environment copies running in parallel)
-    :param batch_size: (int) Minibatch size
-    :param n_epochs: (int) Number of epoch when optimizing the surrogate loss
-    :param gamma: (float) Discount factor
-    :param gae_lambda: (float) Factor for trade-off of bias vs variance for Generalized Advantage Estimator
-    :param clip_range: (float or callable) Clipping parameter, it can be a function of the current progress
+    :param batch_size: Minibatch size
+    :param n_epochs: Number of epoch when optimizing the surrogate loss
+    :param gamma: Discount factor
+    :param gae_lambda: Factor for trade-off of bias vs variance for Generalized Advantage Estimator
+    :param clip_range: Clipping parameter, it can be a function of the current progress
         remaining (from 1 to 0).
-    :param clip_range_vf: (float or callable) Clipping parameter for the value function,
+    :param clip_range_vf: Clipping parameter for the value function,
         it can be a function of the current progress remaining (from 1 to 0).
         This is a parameter specific to the OpenAI implementation. If None is passed (default),
         no clipping will be done on the value function.
         IMPORTANT: this clipping depends on the reward scaling.
-    :param ent_coef: (float) Entropy coefficient for the loss calculation
-    :param vf_coef: (float) Value function coefficient for the loss calculation
-    :param max_grad_norm: (float) The maximum value for the gradient clipping
-    :param use_sde: (bool) Whether to use generalized State Dependent Exploration (gSDE)
+    :param ent_coef: Entropy coefficient for the loss calculation
+    :param vf_coef: Value function coefficient for the loss calculation
+    :param max_grad_norm: The maximum value for the gradient clipping
+    :param use_sde: Whether to use generalized State Dependent Exploration (gSDE)
         instead of action noise exploration (default: False)
-    :param sde_sample_freq: (int) Sample a new noise matrix every n steps when using gSDE
+    :param sde_sample_freq: Sample a new noise matrix every n steps when using gSDE
         Default: -1 (only sample at the beginning of the rollout)
-    :param target_kl: (float) Limit the KL divergence between updates,
+    :param target_kl: Limit the KL divergence between updates,
         because the clipping is not enough to prevent large update
         see issue #213 (cf https://github.com/hill-a/stable-baselines/issues/213)
         By default, there is no limit on the kl div.
-    :param tensorboard_log: (str) the log location for tensorboard (if None, no logging)
-    :param create_eval_env: (bool) Whether to create a second environment that will be
+    :param tensorboard_log: the log location for tensorboard (if None, no logging)
+    :param create_eval_env: Whether to create a second environment that will be
         used for evaluating the agent periodically. (Only available when passing string for the environment)
-    :param policy_kwargs: (dict) additional arguments to be passed to the policy on creation
-    :param verbose: (int) the verbosity level: 0 no output, 1 info, 2 debug
-    :param seed: (int) Seed for the pseudo random generators
-    :param device: (str or th.device) Device (cpu, cuda, ...) on which the code should be run.
+    :param policy_kwargs: additional arguments to be passed to the policy on creation
+    :param verbose: the verbosity level: 0 no output, 1 info, 2 debug
+    :param seed: Seed for the pseudo random generators
+    :param device: Device (cpu, cuda, ...) on which the code should be run.
         Setting it to auto, the code will be run on the GPU if possible.
-    :param _init_setup_model: (bool) Whether or not to build the network at the creation of the instance
+    :param _init_setup_model: Whether or not to build the network at the creation of the instance
     """
 
     def __init__(
         self,
         policy: Union[str, Type[ActorCriticPolicy]],
         env: Union[GymEnv, str],
-        learning_rate: Union[float, Callable] = 3e-4,
+        learning_rate: Union[float, Schedule] = 3e-4,
         n_steps: int = 2048,
         batch_size: Optional[int] = 64,
         n_epochs: int = 10,
         gamma: float = 0.99,
         gae_lambda: float = 0.95,
-        clip_range: float = 0.2,
-        clip_range_vf: Optional[float] = None,
+        clip_range: Union[float, Schedule] = 0.2,
+        clip_range_vf: Union[None, float, Schedule] = None,
         ent_coef: float = 0.0,
         vf_coef: float = 0.5,
         max_grad_norm: float = 0.5,
@@ -108,6 +108,12 @@ class PPO(OnPolicyAlgorithm):
             create_eval_env=create_eval_env,
             seed=seed,
             _init_setup_model=False,
+            supported_action_spaces=(
+                spaces.Box,
+                spaces.Discrete,
+                spaces.MultiDiscrete,
+                spaces.MultiBinary,
+            ),
         )
 
         self.batch_size = batch_size
@@ -132,8 +138,7 @@ class PPO(OnPolicyAlgorithm):
 
     def train(self) -> None:
         """
-        Update policy using the currently gathered
-        rollout buffer.
+        Update policy using the currently gathered rollout buffer.
         """
         # Update optimizer learning rate
         self._update_learning_rate(self.policy.optimizer)
@@ -147,7 +152,7 @@ class PPO(OnPolicyAlgorithm):
         pg_losses, value_losses = [], []
         clip_fractions = []
 
-        # train for gradient_steps epochs
+        # train for n_epochs epochs
         for epoch in range(self.n_epochs):
             approx_kl_divs = []
             # Do a complete pass on the rollout buffer
@@ -221,7 +226,7 @@ class PPO(OnPolicyAlgorithm):
                 break
 
         self._n_updates += self.n_epochs
-        explained_var = explained_variance(self.rollout_buffer.returns.flatten(), self.rollout_buffer.values.flatten())
+        explained_var = explained_variance(self.rollout_buffer.values.flatten(), self.rollout_buffer.returns.flatten())
 
         # Logs
         logger.record("train/entropy_loss", np.mean(entropy_losses))

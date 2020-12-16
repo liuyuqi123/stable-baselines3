@@ -26,6 +26,7 @@ Main Features
 - Tests, high code coverage and type hints
 - Clean code
 - Tensorboard support
+- **The performance of each algorithm was tested** (see *Results* section in their respective page)
 
 
 .. toctree::
@@ -44,9 +45,12 @@ Main Features
    guide/callbacks
    guide/tensorboard
    guide/rl_zoo
+   guide/imitation
    guide/migration
    guide/checking_nan
    guide/developer
+   guide/save_format
+   guide/export
 
 
 .. toctree::
@@ -57,6 +61,7 @@ Main Features
   modules/a2c
   modules/ddpg
   modules/dqn
+  modules/her
   modules/ppo
   modules/sac
   modules/td3
@@ -66,7 +71,7 @@ Main Features
   :caption: Common
 
   common/atari_wrappers
-  common/cmd_util
+  common/env_util
   common/distributions
   common/evaluation
   common/env_checker

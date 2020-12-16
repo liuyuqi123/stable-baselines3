@@ -3,22 +3,143 @@
 Changelog
 ==========
 
-Pre-Release 0.9.0a1 (WIP)
+Pre-Release 0.11.0a2 (WIP)
+-------------------------------
+
+Breaking Changes:
+^^^^^^^^^^^^^^^^^
+- ``evaluate_policy`` now returns rewards/episode lengths from a ``Monitor`` wrapper if one is present,
+  this allows to return the unnormalized reward in the case of Atari games for instance.
+- Renamed ``common.vec_env.is_wrapped`` to ``common.vec_env.is_vecenv_wrapped`` to avoid confusion
+  with the new ``is_wrapped()`` helper
+
+New Features:
+^^^^^^^^^^^^^
+- Add support for ``VecFrameStack`` to stack on first or last observation dimension, along with
+  automatic check for image spaces.
+- ``VecFrameStack`` now has a ``channels_order`` argument to tell if observations should be stacked
+  on the first or last observation dimension (originally always stacked on last).
+- Added ``common.env_util.is_wrapped`` and ``common.env_util.unwrap_wrapper`` functions for checking/unwrapping
+  an environment for specific wrapper.
+- Added ``env_is_wrapped()`` method for ``VecEnv`` to check if its environments are wrapped
+  with given Gym wrappers.
+- Added ``monitor_kwargs`` parameter to ``make_vec_env`` and ``make_atari_env``
+- Wrap the environments automatically with a ``Monitor`` wrapper when possible.
+- ``EvalCallback`` now logs the success rate when available (``is_success`` must be present in the info dict)
+
+Bug Fixes:
+^^^^^^^^^^
+- Fixed bug where code added VecTranspose on channel-first image environments (thanks @qxcv)
+- Fixed ``DQN`` predict method when using single ``gym.Env`` with ``deterministic=False``
+- Fixed bug that the arguments order of ``explained_variance()`` in ``ppo.py`` and ``a2c.py`` is not correct (@thisray)
+- Fixed bug where full ``HerReplayBuffer`` leads to an index error. (@megan-klaiber)
+- Fixed bug where replay buffer could not be saved if it was too big (> 4 Gb) for python<3.8 (thanks @hn2)
+
+Deprecations:
+^^^^^^^^^^^^^
+
+Others:
+^^^^^^^
+- Add more issue templates
+- Add signatures to callable type annotations (@ernestum)
+- Improve error message in ``NatureCNN``
+- Added checks for supported action spaces to improve clarity of error messages for the user
+
+Documentation:
+^^^^^^^^^^^^^^
+- Updated algorithm table
+- Minor docstring improvements regarding rollout (@stheid)
+- Fix migration doc for ``A2C`` (epsilon parameter)
+- Fix ``clip_range`` docstring
+- Fix duplicated parameter in ``EvalCallback`` docstring (thanks @tfederico)
+- Added example of learning rate schedule
+- Added SUMO-RL as example project (@LucasAlegre)
+- Fix docstring of classes in atari_wrappers.py which were inside the constructor (@LucasAlegre)
+
+Pre-Release 0.10.0 (2020-10-28)
+-------------------------------
+
+**HER with online and offline sampling, bug fixes for features extraction**
+
+Breaking Changes:
+^^^^^^^^^^^^^^^^^
+- **Warning:** Renamed ``common.cmd_util`` to ``common.env_util`` for clarity (affects ``make_vec_env`` and ``make_atari_env`` functions)
+
+New Features:
+^^^^^^^^^^^^^
+- Allow custom actor/critic network architectures using ``net_arch=dict(qf=[400, 300], pi=[64, 64])`` for off-policy algorithms (SAC, TD3, DDPG)
+- Added Hindsight Experience Replay ``HER``. (@megan-klaiber)
+- ``VecNormalize`` now supports ``gym.spaces.Dict`` observation spaces
+- Support logging videos to Tensorboard (@SwamyDev)
+- Added ``share_features_extractor`` argument to ``SAC`` and ``TD3`` policies
+
+Bug Fixes:
+^^^^^^^^^^
+- Fix GAE computation for on-policy algorithms (off-by one for the last value) (thanks @Wovchena)
+- Fixed potential issue when loading a different environment
+- Fix ignoring the exclude parameter when recording logs using json, csv or log as logging format (@SwamyDev)
+- Make ``make_vec_env`` support the ``env_kwargs`` argument when using an env ID str (@ManifoldFR)
+- Fix model creation initializing CUDA even when `device="cpu"` is provided
+- Fix ``check_env`` not checking if the env has a Dict actionspace before calling ``_check_nan`` (@wmmc88)
+- Update the check for spaces unsupported by Stable Baselines 3 to include checks on the action space (@wmmc88)
+- Fixed feature extractor bug for target network where the same net was shared instead
+  of being separate. This bug affects ``SAC``, ``DDPG`` and ``TD3`` when using ``CnnPolicy`` (or custom feature extractor)
+- Fixed a bug when passing an environment when loading a saved model with a ``CnnPolicy``, the passed env was not wrapped properly
+  (the bug was introduced when implementing ``HER`` so it should not be present in previous versions)
+
+Deprecations:
+^^^^^^^^^^^^^
+
+Others:
+^^^^^^^
+- Improved typing coverage
+- Improved error messages for unsupported spaces
+- Added ``.vscode`` to the gitignore
+
+Documentation:
+^^^^^^^^^^^^^^
+- Added first draft of migration guide
+- Added intro to `imitation <https://github.com/HumanCompatibleAI/imitation>`_ library (@shwang)
+- Enabled doc for ``CnnPolicies``
+- Added advanced saving and loading example
+- Added base doc for exporting models
+- Added example for getting and setting model parameters
+
+
+Pre-Release 0.9.0 (2020-10-03)
 ------------------------------
+
+**Bug fixes, get/set parameters  and improved docs**
 
 Breaking Changes:
 ^^^^^^^^^^^^^^^^^
 - Removed ``device`` keyword argument of policies; use ``policy.to(device)`` instead. (@qxcv)
+- Rename ``BaseClass.get_torch_variables`` -> ``BaseClass._get_torch_save_params`` and ``BaseClass.excluded_save_params`` -> ``BaseClass._excluded_save_params``
+- Renamed saved items ``tensors`` to ``pytorch_variables`` for clarity
+- ``make_atari_env``, ``make_vec_env`` and ``set_random_seed`` must be imported with (and not directly from ``stable_baselines3.common``):
+
+.. code-block:: python
+
+  from stable_baselines3.common.cmd_util import make_atari_env, make_vec_env
+  from stable_baselines3.common.utils import set_random_seed
+
 
 New Features:
 ^^^^^^^^^^^^^
 - Added ``unwrap_vec_wrapper()`` to ``common.vec_env`` to extract ``VecEnvWrapper`` if needed
 - Added ``StopTrainingOnMaxEpisodes`` to callback collection (@xicocaio)
+- Added ``device`` keyword argument to ``BaseAlgorithm.load()`` (@liorcohen5)
+- Callbacks have access to rollout collection locals as in SB2. (@PartiallyTyped)
+- Added ``get_parameters`` and ``set_parameters`` for accessing/setting parameters of the agent
+- Added actor/critic loss logging for TD3. (@mloo3)
 
 Bug Fixes:
 ^^^^^^^^^^
+- Added ``unwrap_vec_wrapper()`` to ``common.vec_env`` to extract ``VecEnvWrapper`` if needed
 - Fixed a bug where the environment was reset twice when using ``evaluate_policy``
 - Fix logging of ``clip_fraction`` in PPO (@diditforlulz273)
+- Fixed a bug where cuda support was wrongly checked when passing the GPU index, e.g., ``device="cuda:0"`` (@liorcohen5)
+- Fixed a bug when the random seed was not properly set on cuda when passing the GPU index
 
 Deprecations:
 ^^^^^^^^^^^^^
@@ -26,12 +147,22 @@ Deprecations:
 Others:
 ^^^^^^^
 - Improve typing coverage of the ``VecEnv``
+- Fix type annotation of ``make_vec_env`` (@ManifoldFR)
 - Removed ``AlreadySteppingError`` and ``NotSteppingError`` that were not used
 - Fixed typos in SAC and TD3
+- Reorganized functions for clarity in ``BaseClass`` (save/load functions close to each other, private
+  functions at top)
+- Clarified docstrings on what is saved and loaded to/from files
+- Simplified ``save_to_zip_file`` function by removing duplicate code
+- Store library version along with the saved models
+- DQN loss is now logged
 
 Documentation:
 ^^^^^^^^^^^^^^
 - Added ``StopTrainingOnMaxEpisodes`` details and example (@xicocaio)
+- Updated custom policy section (added custom feature extractor example)
+- Re-enable ``sphinx_autodoc_typehints``
+- Updated doc style for type hints and remove duplicated type hints
 
 
 
@@ -47,7 +178,7 @@ Breaking Changes:
 - Refactored ``Critic`` class for ``TD3`` and ``SAC``, it is now called ``ContinuousCritic``
   and has an additional parameter ``n_critics``
 - ``SAC`` and ``TD3`` now accept an arbitrary number of critics (e.g. ``policy_kwargs=dict(n_critics=3)``)
-    instead of only 2 previously
+  instead of only 2 previously
 
 New Features:
 ^^^^^^^^^^^^^
@@ -59,7 +190,6 @@ New Features:
 - Refactored opening paths for saving and loading to use strings, pathlib or io.BufferedIOBase (@PartiallyTyped)
 - Added ``DDPG`` algorithm as a special case of ``TD3``.
 - Introduced ``BaseModel`` abstract parent for ``BasePolicy``, which critics inherit from.
-- Callbacks have access to rollout collection locals as in SB2. (@PartiallyTyped)
 
 Bug Fixes:
 ^^^^^^^^^^
@@ -96,7 +226,6 @@ Documentation:
 - Added PyBullet colab notebook
 - Fixed typo in PPO example code (@joeljosephjin)
 - Fixed typo in custom policy doc (@RaphaelWag)
-
 
 
 Pre-Release 0.7.0 (2020-06-10)
@@ -372,11 +501,11 @@ Maintainers
 -----------
 
 Stable-Baselines3 is currently maintained by `Antonin Raffin`_ (aka `@araffin`_), `Ashley Hill`_ (aka @hill-a),
-`Maximilian Ernestus`_ (aka @erniejunior), `Adam Gleave`_ (`@AdamGleave`_) and `Anssi Kanervisto`_ (aka `@Miffyli`_).
+`Maximilian Ernestus`_ (aka @ernestum), `Adam Gleave`_ (`@AdamGleave`_) and `Anssi Kanervisto`_ (aka `@Miffyli`_).
 
 .. _Ashley Hill: https://github.com/hill-a
 .. _Antonin Raffin: https://araffin.github.io/
-.. _Maximilian Ernestus: https://github.com/erniejunior
+.. _Maximilian Ernestus: https://github.com/ernestum
 .. _Adam Gleave: https://gleave.me/
 .. _@araffin: https://github.com/araffin
 .. _@AdamGleave: https://github.com/adamgleave
@@ -396,7 +525,8 @@ And all the contributors:
 @EliasHasle @mrakgr @Bleyddyn @antoine-galataud @junhyeokahn @AdamGleave @keshaviyengar @tperol
 @XMaster96 @kantneel @Pastafarianist @GerardMaggiolino @PatrickWalter214 @yutingsz @sc420 @Aaahh @billtubbs
 @Miffyli @dwiel @miguelrass @qxcv @jaberkow @eavelardev @ruifeng96150 @pedrohbtp @srivatsankrishnan @evilsocket
-@MarvineGothic @jdossgollin @SyllogismRXS @rusu24edward @jbulow @Antymon @seheevic @justinkterry @edbeeching
+@MarvineGothic @jdossgollin @stheid @SyllogismRXS @rusu24edward @jbulow @Antymon @seheevic @justinkterry @edbeeching
 @flodorner @KuKuXia @NeoExtended @PartiallyTyped @mmcenta @richardwu @kinalmehta @rolandgvc @tkelestemur @mloo3
 @tirafesi @blurLake @koulakis @joeljosephjin @shwang @rk37 @andyshih12 @RaphaelWag @xicocaio
-@diditforlulz273
+@diditforlulz273 @liorcohen5 @ManifoldFR @mloo3 @SwamyDev @wmmc88 @megan-klaiber @thisray
+@tfederico @hn2 @LucasAlegre

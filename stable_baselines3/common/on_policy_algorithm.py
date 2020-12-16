@@ -1,5 +1,5 @@
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import gym
 import numpy as np
@@ -10,7 +10,7 @@ from stable_baselines3.common.base_class import BaseAlgorithm
 from stable_baselines3.common.buffers import RolloutBuffer
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.policies import ActorCriticPolicy
-from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback
+from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
 from stable_baselines3.common.utils import safe_mean
 from stable_baselines3.common.vec_env import VecEnv
 
@@ -19,40 +19,41 @@ class OnPolicyAlgorithm(BaseAlgorithm):
     """
     The base for On-Policy algorithms (ex: A2C/PPO).
 
-    :param policy: (ActorCriticPolicy or str) The policy model to use (MlpPolicy, CnnPolicy, ...)
-    :param env: (Gym environment or str) The environment to learn from (if registered in Gym, can be str)
-    :param learning_rate: (float or callable) The learning rate, it can be a function
+    :param policy: The policy model to use (MlpPolicy, CnnPolicy, ...)
+    :param env: The environment to learn from (if registered in Gym, can be str)
+    :param learning_rate: The learning rate, it can be a function
         of the current progress remaining (from 1 to 0)
-    :param n_steps: (int) The number of steps to run for each environment per update
+    :param n_steps: The number of steps to run for each environment per update
         (i.e. batch size is n_steps * n_env where n_env is number of environment copies running in parallel)
-    :param gamma: (float) Discount factor
-    :param gae_lambda: (float) Factor for trade-off of bias vs variance for Generalized Advantage Estimator.
+    :param gamma: Discount factor
+    :param gae_lambda: Factor for trade-off of bias vs variance for Generalized Advantage Estimator.
         Equivalent to classic advantage when set to 1.
-    :param ent_coef: (float) Entropy coefficient for the loss calculation
-    :param vf_coef: (float) Value function coefficient for the loss calculation
-    :param max_grad_norm: (float) The maximum value for the gradient clipping
-    :param use_sde: (bool) Whether to use generalized State Dependent Exploration (gSDE)
+    :param ent_coef: Entropy coefficient for the loss calculation
+    :param vf_coef: Value function coefficient for the loss calculation
+    :param max_grad_norm: The maximum value for the gradient clipping
+    :param use_sde: Whether to use generalized State Dependent Exploration (gSDE)
         instead of action noise exploration (default: False)
-    :param sde_sample_freq: (int) Sample a new noise matrix every n steps when using gSDE
+    :param sde_sample_freq: Sample a new noise matrix every n steps when using gSDE
         Default: -1 (only sample at the beginning of the rollout)
-    :param tensorboard_log: (str) the log location for tensorboard (if None, no logging)
-    :param create_eval_env: (bool) Whether to create a second environment that will be
+    :param tensorboard_log: the log location for tensorboard (if None, no logging)
+    :param create_eval_env: Whether to create a second environment that will be
         used for evaluating the agent periodically. (Only available when passing string for the environment)
     :param monitor_wrapper: When creating an environment, whether to wrap it
         or not in a Monitor wrapper.
-    :param policy_kwargs: (dict) additional arguments to be passed to the policy on creation
-    :param verbose: (int) the verbosity level: 0 no output, 1 info, 2 debug
-    :param seed: (int) Seed for the pseudo random generators
-    :param device: (str or th.device) Device (cpu, cuda, ...) on which the code should be run.
+    :param policy_kwargs: additional arguments to be passed to the policy on creation
+    :param verbose: the verbosity level: 0 no output, 1 info, 2 debug
+    :param seed: Seed for the pseudo random generators
+    :param device: Device (cpu, cuda, ...) on which the code should be run.
         Setting it to auto, the code will be run on the GPU if possible.
-    :param _init_setup_model: (bool) Whether or not to build the network at the creation of the instance
+    :param _init_setup_model: Whether or not to build the network at the creation of the instance
+    :param supported_action_spaces: The action spaces supported by the algorithm.
     """
 
     def __init__(
         self,
         policy: Union[str, Type[ActorCriticPolicy]],
         env: Union[GymEnv, str],
-        learning_rate: Union[float, Callable],
+        learning_rate: Union[float, Schedule],
         n_steps: int,
         gamma: float,
         gae_lambda: float,
@@ -69,6 +70,7 @@ class OnPolicyAlgorithm(BaseAlgorithm):
         seed: Optional[int] = None,
         device: Union[th.device, str] = "auto",
         _init_setup_model: bool = True,
+        supported_action_spaces: Optional[Tuple[gym.spaces.Space, ...]] = None,
     ):
 
         super(OnPolicyAlgorithm, self).__init__(
@@ -85,6 +87,7 @@ class OnPolicyAlgorithm(BaseAlgorithm):
             support_multi_env=True,
             seed=seed,
             tensorboard_log=tensorboard_log,
+            supported_action_spaces=supported_action_spaces,
         )
 
         self.n_steps = n_steps
@@ -124,14 +127,16 @@ class OnPolicyAlgorithm(BaseAlgorithm):
         self, env: VecEnv, callback: BaseCallback, rollout_buffer: RolloutBuffer, n_rollout_steps: int
     ) -> bool:
         """
-        Collect rollouts using the current policy and fill a `RolloutBuffer`.
+        Collect experiences using the current policy and fill a ``RolloutBuffer``.
+        The term rollout here refers to the model-free notion and should not
+        be used with the concept of rollout used in model-based RL or planning.
 
-        :param env: (VecEnv) The training environment
-        :param callback: (BaseCallback) Callback that will be called at each step
+        :param env: The training environment
+        :param callback: Callback that will be called at each step
             (and at the beginning and end of the rollout)
-        :param rollout_buffer: (RolloutBuffer) Buffer to fill with rollouts
-        :param n_steps: (int) Number of experiences to collect per environment
-        :return: (bool) True if function returned with at least `n_rollout_steps`
+        :param rollout_buffer: Buffer to fill with rollouts
+        :param n_steps: Number of experiences to collect per environment
+        :return: True if function returned with at least `n_rollout_steps`
             collected, False if callback terminated rollout prematurely.
         """
         assert self._last_obs is not None, "No previous observation was provided"
@@ -179,7 +184,12 @@ class OnPolicyAlgorithm(BaseAlgorithm):
             self._last_obs = new_obs
             self._last_dones = dones
 
-        rollout_buffer.compute_returns_and_advantage(values, dones=dones)
+        with th.no_grad():
+            # Compute value for the last timestep
+            obs_tensor = th.as_tensor(new_obs).to(self.device)
+            _, values, _ = self.policy.forward(obs_tensor)
+
+        rollout_buffer.compute_returns_and_advantage(last_values=values, dones=dones)
 
         callback.on_rollout_end()
 
@@ -240,10 +250,7 @@ class OnPolicyAlgorithm(BaseAlgorithm):
 
         return self
 
-    def get_torch_variables(self) -> Tuple[List[str], List[str]]:
-        """
-        cf base class
-        """
+    def _get_torch_save_params(self) -> Tuple[List[str], List[str]]:
         state_dicts = ["policy", "policy.optimizer"]
 
         return state_dicts, []

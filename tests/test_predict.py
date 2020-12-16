@@ -46,7 +46,7 @@ def test_predict(model_class, env_id, device):
     # Test detection of different shapes by the predict method
     model = model_class("MlpPolicy", env_id, device=device)
     # Check that the policy is on the right device
-    assert get_device(device) == model.policy.device
+    assert get_device(device).type == model.policy.device.type
 
     env = gym.make(env_id)
     vec_env = DummyVecEnv([lambda: gym.make(env_id), lambda: gym.make(env_id)])
@@ -59,3 +59,13 @@ def test_predict(model_class, env_id, device):
     vec_env_obs = vec_env.reset()
     action, _ = model.predict(vec_env_obs)
     assert action.shape[0] == vec_env_obs.shape[0]
+
+    # Special case for DQN to check the epsilon greedy exploration
+    if model_class == DQN:
+        model.exploration_rate = 1.0
+        action, _ = model.predict(obs, deterministic=False)
+        assert action.shape == env.action_space.shape
+        assert env.action_space.contains(action)
+
+        action, _ = model.predict(vec_env_obs, deterministic=False)
+        assert action.shape[0] == vec_env_obs.shape[0]

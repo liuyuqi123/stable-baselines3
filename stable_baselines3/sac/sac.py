@@ -1,5 +1,6 @@
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
+import gym
 import numpy as np
 import torch as th
 from torch.nn import functional as F
@@ -7,7 +8,7 @@ from torch.nn import functional as F
 from stable_baselines3.common import logger
 from stable_baselines3.common.noise import ActionNoise
 from stable_baselines3.common.off_policy_algorithm import OffPolicyAlgorithm
-from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback
+from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
 from stable_baselines3.common.utils import polyak_update
 from stable_baselines3.sac.policies import SACPolicy
 
@@ -26,55 +27,55 @@ class SAC(OffPolicyAlgorithm):
     Note: we use double q target and not value target as discussed
     in https://github.com/hill-a/stable-baselines/issues/270
 
-    :param policy: (SACPolicy or str) The policy model to use (MlpPolicy, CnnPolicy, ...)
-    :param env: (GymEnv or str) The environment to learn from (if registered in Gym, can be str)
-    :param learning_rate: (float or callable) learning rate for adam optimizer,
+    :param policy: The policy model to use (MlpPolicy, CnnPolicy, ...)
+    :param env: The environment to learn from (if registered in Gym, can be str)
+    :param learning_rate: learning rate for adam optimizer,
         the same learning rate will be used for all networks (Q-Values, Actor and Value function)
         it can be a function of the current progress remaining (from 1 to 0)
-    :param buffer_size: (int) size of the replay buffer
-    :param learning_starts: (int) how many steps of the model to collect transitions for before learning starts
-    :param batch_size: (int) Minibatch size for each gradient update
-    :param tau: (float) the soft update coefficient ("Polyak update", between 0 and 1)
-    :param gamma: (float) the discount factor
-    :param train_freq: (int) Update the model every ``train_freq`` steps. Set to `-1` to disable.
-    :param gradient_steps: (int) How many gradient steps to do after each rollout
+    :param buffer_size: size of the replay buffer
+    :param learning_starts: how many steps of the model to collect transitions for before learning starts
+    :param batch_size: Minibatch size for each gradient update
+    :param tau: the soft update coefficient ("Polyak update", between 0 and 1)
+    :param gamma: the discount factor
+    :param train_freq: Update the model every ``train_freq`` steps. Set to `-1` to disable.
+    :param gradient_steps: How many gradient steps to do after each rollout
         (see ``train_freq`` and ``n_episodes_rollout``)
         Set to ``-1`` means to do as many gradient steps as steps done in the environment
         during the rollout.
-    :param n_episodes_rollout: (int) Update the model every ``n_episodes_rollout`` episodes.
+    :param n_episodes_rollout: Update the model every ``n_episodes_rollout`` episodes.
         Note that this cannot be used at the same time as ``train_freq``. Set to `-1` to disable.
-    :param action_noise: (ActionNoise) the action noise type (None by default), this can help
+    :param action_noise: the action noise type (None by default), this can help
         for hard exploration problem. Cf common.noise for the different action noise type.
-    :param optimize_memory_usage: (bool) Enable a memory efficient variant of the replay buffer
+    :param optimize_memory_usage: Enable a memory efficient variant of the replay buffer
         at a cost of more complexity.
         See https://github.com/DLR-RM/stable-baselines3/issues/37#issuecomment-637501195
-    :param ent_coef: (str or float) Entropy regularization coefficient. (Equivalent to
+    :param ent_coef: Entropy regularization coefficient. (Equivalent to
         inverse of reward scale in the original SAC paper.)  Controlling exploration/exploitation trade-off.
         Set it to 'auto' to learn it automatically (and 'auto_0.1' for using 0.1 as initial value)
-    :param target_update_interval: (int) update the target network every ``target_network_update_freq``
+    :param target_update_interval: update the target network every ``target_network_update_freq``
         gradient steps.
-    :param target_entropy: (str or float) target entropy when learning ``ent_coef`` (``ent_coef = 'auto'``)
-    :param use_sde: (bool) Whether to use generalized State Dependent Exploration (gSDE)
+    :param target_entropy: target entropy when learning ``ent_coef`` (``ent_coef = 'auto'``)
+    :param use_sde: Whether to use generalized State Dependent Exploration (gSDE)
         instead of action noise exploration (default: False)
-    :param sde_sample_freq: (int) Sample a new noise matrix every n steps when using gSDE
+    :param sde_sample_freq: Sample a new noise matrix every n steps when using gSDE
         Default: -1 (only sample at the beginning of the rollout)
-    :param use_sde_at_warmup: (bool) Whether to use gSDE instead of uniform sampling
+    :param use_sde_at_warmup: Whether to use gSDE instead of uniform sampling
         during the warm up phase (before learning starts)
-    :param create_eval_env: (bool) Whether to create a second environment that will be
+    :param create_eval_env: Whether to create a second environment that will be
         used for evaluating the agent periodically. (Only available when passing string for the environment)
-    :param policy_kwargs: (dict) additional arguments to be passed to the policy on creation
-    :param verbose: (int) the verbosity level: 0 no output, 1 info, 2 debug
-    :param seed: (int) Seed for the pseudo random generators
-    :param device: (str or th.device) Device (cpu, cuda, ...) on which the code should be run.
+    :param policy_kwargs: additional arguments to be passed to the policy on creation
+    :param verbose: the verbosity level: 0 no output, 1 info, 2 debug
+    :param seed: Seed for the pseudo random generators
+    :param device: Device (cpu, cuda, ...) on which the code should be run.
         Setting it to auto, the code will be run on the GPU if possible.
-    :param _init_setup_model: (bool) Whether or not to build the network at the creation of the instance
+    :param _init_setup_model: Whether or not to build the network at the creation of the instance
     """
 
     def __init__(
         self,
         policy: Union[str, Type[SACPolicy]],
         env: Union[GymEnv, str],
-        learning_rate: Union[float, Callable] = 3e-4,
+        learning_rate: Union[float, Schedule] = 3e-4,
         buffer_size: int = int(1e6),
         learning_starts: int = 100,
         batch_size: int = 256,
@@ -124,6 +125,7 @@ class SAC(OffPolicyAlgorithm):
             sde_sample_freq=sde_sample_freq,
             use_sde_at_warmup=use_sde_at_warmup,
             optimize_memory_usage=optimize_memory_usage,
+            supported_action_spaces=(gym.spaces.Box),
         )
 
         self.target_entropy = target_entropy
@@ -293,24 +295,14 @@ class SAC(OffPolicyAlgorithm):
             reset_num_timesteps=reset_num_timesteps,
         )
 
-    def excluded_save_params(self) -> List[str]:
-        """
-        Returns the names of the parameters that should be excluded by default
-        when saving the model.
+    def _excluded_save_params(self) -> List[str]:
+        return super(SAC, self)._excluded_save_params() + ["actor", "critic", "critic_target"]
 
-        :return: (List[str]) List of parameters that should be excluded from save
-        """
-        # Exclude aliases
-        return super(SAC, self).excluded_save_params() + ["actor", "critic", "critic_target"]
-
-    def get_torch_variables(self) -> Tuple[List[str], List[str]]:
-        """
-        cf base class
-        """
+    def _get_torch_save_params(self) -> Tuple[List[str], List[str]]:
         state_dicts = ["policy", "actor.optimizer", "critic.optimizer"]
-        saved_tensors = ["log_ent_coef"]
+        saved_pytorch_variables = ["log_ent_coef"]
         if self.ent_coef_optimizer is not None:
             state_dicts.append("ent_coef_optimizer")
         else:
-            saved_tensors.append("ent_coef_tensor")
-        return state_dicts, saved_tensors
+            saved_pytorch_variables.append("ent_coef_tensor")
+        return state_dicts, saved_pytorch_variables
